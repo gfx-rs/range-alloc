@@ -10,3 +10,4 @@ authors = ["the gfx-rs Developers"]
 documentation = "https://docs.rs/range-alloc"
 categories = ["memory-management"]
 edition = "2018"
+readme = "README.md"
