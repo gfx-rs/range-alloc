@@ -1,9 +1,51 @@
+//! A generic range allocator for managing sub-ranges within a larger range.
+//!
+//! This crate provides [`RangeAllocator`], which hands out non-overlapping
+//! `Range<T>` values from a pool. It uses a best-fit strategy to reduce
+//! fragmentation and automatically merges adjacent free ranges on deallocation.
+//!
+//! # Example
+//!
+//! ```
+//! use range_alloc::RangeAllocator;
+//!
+//! let mut alloc = RangeAllocator::new(0..1024);
+//!
+//! // Allocate two regions.
+//! let a = alloc.allocate_range(256).unwrap(); // 0..256
+//! let b = alloc.allocate_range(128).unwrap(); // 256..384
+//!
+//! // Free the first region so it can be reused.
+//! alloc.free_range(a);
+//! ```
+//!
+//! # Minimum Supported Rust Version
+//!
+//! The MSRV of this crate is at least 1.31, possibly earlier. It will only be
+//! bumped in a breaking release.
+
 use std::{
     fmt::Debug,
     iter::Sum,
     ops::{Add, AddAssign, Range, Rem, Sub},
 };
 
+/// A best-fit range allocator over a generic index type `T`.
+///
+/// `RangeAllocator` manages a single contiguous range and hands out
+/// non-overlapping sub-ranges on request. Freed ranges are automatically
+/// merged with their neighbors.
+///
+/// # Example
+///
+/// ```
+/// use range_alloc::RangeAllocator;
+///
+/// let mut alloc = RangeAllocator::new(0..100);
+/// let r = alloc.allocate_range(10).unwrap();
+/// assert_eq!(r, 0..10);
+/// alloc.free_range(r);
+/// ```
 #[derive(Debug)]
 pub struct RangeAllocator<T> {
     /// The range this allocator covers.
@@ -14,8 +56,15 @@ pub struct RangeAllocator<T> {
     free_ranges: Vec<Range<T>>,
 }
 
+/// The error returned when an allocation cannot be satisfied.
+///
+/// Contains the total free space that is available but fragmented
+/// across non-contiguous ranges.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RangeAllocationError<T> {
+    /// The total length of all free ranges combined. When this is
+    /// greater than or equal to the requested length, the allocation
+    /// failed due to fragmentation rather than insufficient space.
     pub fragmented_free_length: T,
 }
 
@@ -23,6 +72,18 @@ impl<T> RangeAllocator<T>
 where
     T: Clone + Copy + Add<Output = T> + AddAssign + Sub<Output = T> + Eq + PartialOrd + Debug,
 {
+    /// Creates a new allocator that manages the given range.
+    ///
+    /// The entire range starts as free and available for allocation.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let alloc = RangeAllocator::new(0u32..1024);
+    /// assert!(alloc.is_empty());
+    /// ```
     pub fn new(range: Range<T>) -> Self {
         RangeAllocator {
             initial_range: range.clone(),
@@ -30,10 +91,30 @@ where
         }
     }
 
+    /// Returns the full range this allocator was created with
+    /// (including any extensions from [`grow_to`](Self::grow_to)).
     pub fn initial_range(&self) -> &Range<T> {
         &self.initial_range
     }
 
+    /// Extends the allocator's range to a new end value.
+    ///
+    /// The newly added region (`old_end..new_end`) becomes available for
+    /// allocation. If the last free range is adjacent to the old end, it
+    /// is extended in place rather than creating a new entry.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..10);
+    /// alloc.allocate_range(10).unwrap();
+    /// // Out of space -- grow the pool.
+    /// alloc.grow_to(20);
+    /// let r = alloc.allocate_range(5).unwrap();
+    /// assert_eq!(r, 10..15);
+    /// ```
     pub fn grow_to(&mut self, new_end: T) {
         let initial_range_end = self.initial_range.end;
         if let Some(last_range) = self
@@ -127,10 +208,60 @@ where
         }
     }
 
+    /// Allocates a sub-range of the given `length`.
+    ///
+    /// Uses a best-fit strategy: the smallest free range that can satisfy
+    /// the request is chosen to minimise fragmentation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `length` is zero.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..100);
+    /// let a = alloc.allocate_range(30).unwrap();
+    /// let b = alloc.allocate_range(20).unwrap();
+    /// assert_eq!(a, 0..30);
+    /// assert_eq!(b, 30..50);
+    /// ```
     pub fn allocate_range(&mut self, length: T) -> Result<Range<T>, RangeAllocationError<T>> {
         self.allocate_range_impl(length, |start| start)
     }
 
+    /// Allocates a sub-range of the given `length` whose start is aligned
+    /// to a multiple of `alignment`.
+    ///
+    /// Any space before the aligned start within a free range is kept free
+    /// and available for future allocations -- no space is wasted on
+    /// alignment padding.
+    ///
+    /// Uses the same best-fit strategy as [`allocate_range`](Self::allocate_range).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `length` or `alignment` is zero.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..256);
+    /// // Offset the free region so the next aligned start is not at 0.
+    /// alloc.allocate_range(1).unwrap(); // 0..1
+    ///
+    /// // Allocate 16 units starting at the next multiple of 16.
+    /// let r = alloc.allocate_range_aligned(16, 16).unwrap();
+    /// assert_eq!(r, 16..32);
+    ///
+    /// // The gap (1..16) is still free and usable.
+    /// let small = alloc.allocate_range(15).unwrap();
+    /// assert_eq!(small, 1..16);
+    /// ```
     pub fn allocate_range_aligned(
         &mut self,
         length: T,
@@ -146,6 +277,26 @@ where
         })
     }
 
+    /// Returns a previously allocated range to the free pool.
+    ///
+    /// Adjacent free ranges are automatically merged to reduce
+    /// fragmentation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `range` is outside the allocator's initial range, is
+    /// empty, or overlaps with an already-free range.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..10);
+    /// let r = alloc.allocate_range(10).unwrap();
+    /// alloc.free_range(r);
+    /// assert!(alloc.is_empty());
+    /// ```
     pub fn free_range(&mut self, range: Range<T>) {
         assert!(self.initial_range.start <= range.start && range.end <= self.initial_range.end);
         assert!(range.start < range.end);
@@ -193,7 +344,23 @@ where
         self.free_ranges.insert(i, range);
     }
 
-    /// Returns an iterator over allocated non-empty ranges
+    /// Returns an iterator over all currently allocated (non-free) ranges.
+    ///
+    /// The ranges are yielded in ascending order.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..30);
+    /// alloc.allocate_range(10).unwrap(); // 0..10
+    /// alloc.allocate_range(10).unwrap(); // 10..20
+    ///
+    /// // Adjacent allocations appear as a single contiguous range.
+    /// let allocated: Vec<_> = alloc.allocated_ranges().collect();
+    /// assert_eq!(allocated, vec![0..20]);
+    /// ```
     pub fn allocated_ranges(&self) -> impl Iterator<Item = Range<T>> + '_ {
         let first = match self.free_ranges.first() {
             Some(Range { ref start, .. }) if *start > self.initial_range.start => {
@@ -219,17 +386,44 @@ where
         first.into_iter().chain(mid).chain(last)
     }
 
+    /// Frees all allocations, restoring the allocator to its initial state.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..10);
+    /// alloc.allocate_range(10).unwrap();
+    /// alloc.reset();
+    /// assert!(alloc.is_empty());
+    /// ```
     pub fn reset(&mut self) {
         self.free_ranges.clear();
         self.free_ranges.push(self.initial_range.clone());
     }
 
+    /// Returns `true` if nothing is currently allocated.
     pub fn is_empty(&self) -> bool {
         self.free_ranges.len() == 1 && self.free_ranges[0] == self.initial_range
     }
 }
 
 impl<T: Copy + Sub<Output = T> + Sum> RangeAllocator<T> {
+    /// Returns the total length of all free ranges combined.
+    ///
+    /// This may be spread across multiple non-contiguous ranges, so an
+    /// allocation of this size is not guaranteed to succeed.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use range_alloc::RangeAllocator;
+    ///
+    /// let mut alloc = RangeAllocator::new(0..100);
+    /// alloc.allocate_range(30).unwrap();
+    /// assert_eq!(alloc.total_available(), 70);
+    /// ```
     pub fn total_available(&self) -> T {
         self.free_ranges
             .iter()
