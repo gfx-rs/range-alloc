@@ -7,6 +7,10 @@ sub-ranges on request. It uses a best-fit strategy to reduce fragmentation and
 automatically merges adjacent free ranges on deallocation. Allocations can
 optionally be aligned to a given boundary without wasting the padding space.
 
+## `no_std` support
+
+This crate is `#![no_std]` and depends on `alloc`.
+
 ## Example
 
 ```rust

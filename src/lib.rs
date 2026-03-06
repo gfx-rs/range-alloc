@@ -4,6 +4,8 @@
 //! `Range<T>` values from a pool. It uses a best-fit strategy to reduce
 //! fragmentation and automatically merges adjacent free ranges on deallocation.
 //!
+//! The crate is `#![no_std]` and uses `alloc` for internal storage.
+//!
 //! # Example
 //!
 //! ```
@@ -24,7 +26,12 @@
 //! The MSRV of this crate is at least 1.39. It will only be
 //! bumped in a breaking release.
 
-use std::{
+#![no_std]
+extern crate alloc;
+
+use alloc::vec;
+use alloc::vec::Vec;
+use core::{
     fmt::Debug,
     iter::Sum,
     ops::{Add, AddAssign, Range, Rem, Sub},
@@ -441,12 +448,12 @@ mod tests {
         let mut alloc = RangeAllocator::new(0..10);
         // Test if an allocation works
         assert_eq!(alloc.allocate_range(4), Ok(0..4));
-        assert!(alloc.allocated_ranges().eq(std::iter::once(0..4)));
+        assert!(alloc.allocated_ranges().eq(core::iter::once(0..4)));
         // Free the prior allocation
         alloc.free_range(0..4);
         // Make sure the free actually worked
         assert_eq!(alloc.free_ranges, vec![0..10]);
-        assert!(alloc.allocated_ranges().eq(std::iter::empty()));
+        assert!(alloc.allocated_ranges().eq(core::iter::empty()));
     }
 
     #[test]
@@ -454,7 +461,7 @@ mod tests {
         let mut alloc = RangeAllocator::new(0..10);
         // Test if the allocator runs out of space correctly
         assert_eq!(alloc.allocate_range(10), Ok(0..10));
-        assert!(alloc.allocated_ranges().eq(std::iter::once(0..10)));
+        assert!(alloc.allocated_ranges().eq(core::iter::once(0..10)));
         assert!(alloc.allocate_range(4).is_err());
         alloc.free_range(0..10);
     }
@@ -464,7 +471,7 @@ mod tests {
         let mut alloc = RangeAllocator::new(0..11);
         // Test if the allocator runs out of space correctly
         assert_eq!(alloc.allocate_range(10), Ok(0..10));
-        assert!(alloc.allocated_ranges().eq(std::iter::once(0..10)));
+        assert!(alloc.allocated_ranges().eq(core::iter::once(0..10)));
         assert!(alloc.allocate_range(4).is_err());
         alloc.grow_to(20);
         assert_eq!(alloc.allocate_range(4), Ok(10..14));
@@ -480,7 +487,7 @@ mod tests {
         alloc.free_range(0..3);
 
         alloc.grow_to(9);
-        assert_eq!(alloc.allocated_ranges().collect::<Vec<_>>(), [3..6]);
+        assert!(alloc.allocated_ranges().eq(core::iter::once(3..6)));
     }
     #[test]
     fn test_grow_with_hole_in_middle() {
@@ -527,7 +534,7 @@ mod tests {
         assert_eq!(alloc.allocate_range(10), Ok(80..90));
         assert_eq!(alloc.allocate_range(10), Ok(90..100));
         assert_eq!(alloc.free_ranges, vec![]);
-        assert!(alloc.allocated_ranges().eq(std::iter::once(0..100)));
+        assert!(alloc.allocated_ranges().eq(core::iter::once(0..100)));
         alloc.free_range(10..20);
         alloc.free_range(30..40);
         alloc.free_range(50..60);
@@ -565,7 +572,7 @@ mod tests {
         assert_eq!(alloc.allocate_range(4), Ok(96..100));
         // Check that nothing is free.
         assert_eq!(alloc.free_ranges, vec![]);
-        assert!(alloc.allocated_ranges().eq(std::iter::once(0..100)));
+        assert!(alloc.allocated_ranges().eq(core::iter::once(0..100)));
     }
 
     #[test]
@@ -597,7 +604,7 @@ mod tests {
         alloc.free_range(6..9);
         alloc.free_range(3..6);
         assert_eq!(alloc.free_ranges, vec![0..9]);
-        assert!(alloc.allocated_ranges().eq(std::iter::empty()));
+        assert!(alloc.allocated_ranges().eq(core::iter::empty()));
     }
 
     #[test]
