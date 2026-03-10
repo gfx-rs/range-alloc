@@ -30,11 +30,11 @@ jobs:
       - run: cargo test
 
   msrv:
-    name: MSRV (1.31)
+    name: MSRV (1.39)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.31"
-      - run: cargo +1.31 check
+          toolchain: "1.39"
+      - run: cargo +1.39 check

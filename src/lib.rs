@@ -21,7 +21,7 @@
 //!
 //! # Minimum Supported Rust Version
 //!
-//! The MSRV of this crate is at least 1.31, possibly earlier. It will only be
+//! The MSRV of this crate is at least 1.39. It will only be
 //! bumped in a breaking release.
 
 use std::{
