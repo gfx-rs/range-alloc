@@ -5,13 +5,22 @@ on:
     branches: ["trunk"]
   pull_request:
 
+env:
+  CI_RUST_VERSION: "1.94"
+  CI_RUST_MSRV: "1.39"
+  RUSTFLAGS: "-Dwarnings"
+  RUSTDOCFLAGS: "-Dwarnings"
+
 jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup component add rustfmt
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
+        with:
+          version: ${{ env.CI_RUST_VERSION }}
+          components: rustfmt
       - run: cargo fmt --check
 
   clippy:
@@ -19,22 +28,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup component add clippy
-      - run: cargo clippy -- -D warnings
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
+        with:
+          version: ${{ env.CI_RUST_VERSION }}
+          components: clippy
+      - run: cargo clippy --all-features -- -D warnings
+      - run: cargo doc --no-deps
 
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo test
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
+        with:
+          version: ${{ env.CI_RUST_VERSION }}
+      - uses: taiki-e/install-action@cargo-nextest
+      - run: cargo nextest run
+      - run: cargo test --doc
+
+  deny:
+    name: Deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny --all-features check
 
   msrv:
     name: MSRV (1.39)
     runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: ""
+      RUSTDOCFLAGS: ""
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
         with:
-          toolchain: "1.39"
-      - run: cargo +1.39 check
+          version: ${{ env.CI_RUST_MSRV }}
+      - run: cargo check
+      - run: cargo check --no-default-features
