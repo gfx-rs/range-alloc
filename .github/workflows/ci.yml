@@ -16,7 +16,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
         with:
           version: ${{ env.CI_RUST_VERSION }}
@@ -27,7 +27,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
         with:
           version: ${{ env.CI_RUST_VERSION }}
@@ -39,7 +39,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
         with:
           version: ${{ env.CI_RUST_VERSION }}
@@ -51,7 +51,7 @@ jobs:
     name: Deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny --all-features check
 
@@ -62,7 +62,7 @@ jobs:
       RUSTFLAGS: ""
       RUSTDOCFLAGS: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cwfitzgerald/repo-common/.github/actions/install-rust@trunk
         with:
           version: ${{ env.CI_RUST_MSRV }}
